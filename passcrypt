@@ -15,6 +15,7 @@ from Crypto.Cipher import DES3, AES, Blowfish, blockalgo
 from Crypto.Util import Counter
 import hashlib
 import os
+from getpass import getpass
 
 class CryptFile(object):
     """Basic methods for all of the file-types"""
@@ -199,6 +200,34 @@ class EncryptedShelf(object):
     def __delitem__(self, key):
         del self._dict[key]
 
+    def update(self, dict):
+        """update with the contents of dictionary 'dict'"""
+        self._dict.update(dict)
+
+    def keys(self):
+        "emulates the dictionary.keys method"
+        return self._dict.keys()
+
+    def values(self):
+        "emulates the dictionary.values method"
+        return self._dict.values()
+
+    def items(self):
+        "emulates the dictionary.items method"
+        return self._dict.items()
+
+    def iterkeys(self):
+        "emulates the dictionary.iterkeys method"
+        return self._dict.iterkeys()
+
+    def itervalues(self):
+        "emulates the dictionary.itervalues method"
+        return self._dict.itervalues()
+
+    def iteritems(self):
+        "emulates the dictionary.iteritems method"
+        return self._dict.iteritems()
+
     def sync(self):
         """Write the changes to disk"""
         file = self.get_file(mode='w')
@@ -212,3 +241,97 @@ class EncryptedShelf(object):
 if __name__ == "__main__":
     """Main program"""
     import argparse
+    import sys
+
+    schemes = {
+        "des3": DES3File,
+        "blowfish": BlowfishFile,
+        "aes": AESFile
+    }
+
+    def get_vault(filename, scheme, password):
+        return EncryptedShelf(schemes[scheme], filename, password)
+
+    def list_pass(args):
+        vault = get_vault(args.output, args.type, args.password)
+        for name, pas in vault.iteritems():
+            if args.show:
+                print "{0}: {1}".format(name, pas)
+            else:
+                print "{0}".format(name)
+        
+
+    def set_pass(args):
+        vault = get_vault(args.output, args.type, args.password)
+        name_pass = getpass("Enter password for {0}:".format(args.name))
+        vault[args.name] = name_pass
+        vault.sync()
+
+    def del_pass(args):
+        vault = get_vault(args.output, args.type, args.password)
+        del vault[args.name]
+        vault.sync()
+
+    def getpass_twice(prompt1, prompt2):
+        p1 = getpass(prompt1)
+        p2 = getpass(prompt2)
+        if p1 != p2:
+            print "Paswords do not match... aborting."
+            sys.exit(1)
+        return p1
+
+    def set_vault_pass(args):
+        from copy import deepcopy
+        vault = get_vault(args.output, args.type, args.password)
+        pass_ = getpass_twice("Enter new vault password:",
+                              "Re-Enter new vault password:")
+        new_vault = get_vault(args.output, args.type, pass_)
+
+        #copy old values to new vault
+        new_vault._dict = deepcopy(vault._dict)
+        new_vault.sync()
+        print "Vault password successfully changed"
+
+
+    def add_vault(args):
+        print "Creating new vault {0}...".format(args.output)
+        pass_ = getpass_twice("Enter master password:",
+                              "Re-Enter master password:")
+        vault = get_vault(args.output, args.type, pass_)
+        vault.sync()
+        print "Vault created."
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("-o", "--output", "--vault", default="passwd.vault",
+                        help="file name of the password vault")
+    parser.add_argument("-t", "--type", default="blowfish",
+                        choices=schemes.keys(), help="Which encryption \
+                        method to use")
+    subparsers = parser.add_subparsers()
+
+    set_parser = subparsers.add_parser("set", help="set a password.")
+    del_parser = subparsers.add_parser("del", help="remove a password.")
+    list_parser = subparsers.add_parser("list", help="list passwords")
+    passwd_parser = subparsers.add_parser("passwd", help="change master password.")
+    create_parser = subparsers.add_parser("create", help="create a new password shelf.")
+
+    list_parser.add_argument("-s", "--show", help="Show password values",
+                             action="store_true")
+    list_parser.set_defaults(method=list_pass)
+
+    set_parser.add_argument("name", help="password id name")
+    set_parser.set_defaults(method=set_pass)
+
+    del_parser.add_argument("name", help="password id name")
+    del_parser.set_defaults(method=del_pass)
+
+
+    passwd_parser.set_defaults(method=set_vault_pass)
+    
+    create_parser.set_defaults(method=add_vault)
+
+    args = parser.parse_args()
+    if args.method != add_vault:
+        args.password = getpass("Enter vault password:")
+    args.method(args)
