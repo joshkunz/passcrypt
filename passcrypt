@@ -36,18 +36,30 @@ class CryptFile(object):
             self._file = open(file_name_or_obj)
 
 class PasswordCryptFile(CryptFile):
-    """Write and INIT operations for 'password' style
-    ciphers"""
+    """File operations for 'password' style ciphers"""
 
     def __init__(self, file_name_or_obj, passphrase):
+        """Create a new file writer"""
         super(PasswordCryptFile, self).__init__(file_name_or_obj)
         self._passphrase = hashlib.sha256(passphrase).hexdigest()
         self._crypt = self.new_cipher()
 
+    def get_key_size(self):
+        """To be defined by the specific crypt method. Reports
+        the maximum key size"""
+        raise NotImplementedError()
+
+    def get_cipher(self, key):
+        """to be defined by the specific crypt method. Returns
+        a new Cipher"""
+        raise NotImplementedError()
+
     def new_cipher(self):
+        """internally used for generating a new cipher"""
         return self.get_cipher(self._passphrase[:self.get_key_size()])
 
     def read(self, size=None):
+        """read size, or till the end of the file"""
         if size is None:
             ciphertext = self._file.read()
         else:
@@ -55,6 +67,7 @@ class PasswordCryptFile(CryptFile):
         return self._crypt.decrypt(ciphertext)
 
     def readline(self):
+        """read till the next newline"""
         buffer = ""
         _in = self.read(1)
         while _in and _in != "\n":
@@ -72,10 +85,10 @@ class PasswordCryptFile(CryptFile):
         return r
 
     def seek(self, to, whence):
-        """Waring this is a very ineffeciant method,
-        ciphers are not made to be able to move backwards through
-        (that would really kind of defeat the purpose) so ever seek
-        requires a read to the seeked-to, position"""
+        """Warning this is a very inefficient method,
+        ciphers are not made to be able to move backwards through files
+        (that would really kind of defeat the purpose) so every seek
+        requires a re-read of the file up to the seeked-to, position"""
         self._file.seek(to, whence)
         pos = self._file.tell()
         self._file.seek(0, 0)
@@ -83,16 +96,19 @@ class PasswordCryptFile(CryptFile):
         self.read(pos)
 
     def write(self, plaintext):
+        """Write to the file"""
         return self._file.write(self._crypt.encrypt(plaintext))
 
     def tell(self, *args, **kwargs):
+        """report the current position"""
         return self._file.tell(*args, **kwargs)
     
     def close(self):
+        """close the file"""
         return self._file.close()
 
 class PKSAEPFile(CryptFile):
-    """Read/write PKS-AEP encrypted files"""
+    """Read/write PKS-AEP encrypted files, UNUSED"""
 
     def __init__(self, file_name_or_obj, keyfile=None):
         super(PKSAEPFile, self).__init__(file_name_or_obj)
@@ -103,7 +119,7 @@ class PKSAEPFile(CryptFile):
         else: self._keyfile = None
 
 class BlowfishFile(PasswordCryptFile):
-    """Read/write Blowfish encryped files"""
+    """Read/write Blowfish encrypted files"""
 
     def get_key_size(self):
         return 56
@@ -142,12 +158,23 @@ class DES3File(PasswordCryptFile):
                         counter=self._counter)
 
 class EncryptedShelf(object):
-    """Simple shelf wrapper for working with a file obj"""
+    """Shelf-like interface for storing python objects in encrypted
+    pickle files."""
 
     def get_file(self, mode='r'):
+        """helper to get the shelf file, with the proper reader"""
         return self._writer(open(self._filename, mode), self._passphrase)
 
     def __init__(self, writer, filename, passphrase, protocol=0):
+        """Create a new EncryptedShelf.
+
+        writer - the file class (blowfish, aes, des) that interfaces
+        with the encrypted file.
+        filename - name of the shelf file.
+        passphrase - password to the archive.
+        protocol - pickle protocol to use.
+        """
+
         self._writer = writer
         self._filename = filename
         self._passphrase = passphrase
@@ -173,12 +200,13 @@ class EncryptedShelf(object):
         del self._dict[key]
 
     def sync(self):
+        """Write the changes to disk"""
         file = self.get_file(mode='w')
         cPickle.dump(self._dict, file, protocol=self._protocol)
         file.close()
 
     def close(self):
-        """Alias of sync"""
+        """DEPRECATED, alias of sync"""
         self.sync()
 
 if __name__ == "__main__":
