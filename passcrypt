@@ -1,0 +1,146 @@
+#!/usr/bin/env python
+
+"""
+passcrypt - hide in plain sight
+
+    passcrypt is a simple key-value style password
+    storage mechanism that keeps password values in
+    a encrypted (through various means) file. It was
+    written to be used in conjuntion with the {dotfile manager}
+    as a simple way of keeping passwords with
+    configuration files in a secure way.
+"""
+import cPickle
+from Crypto.Cipher import DES3, AES, Blowfish, blockalgo
+from Crypto.Util import Counter
+import hashlib
+import os
+
+class CryptFile(object):
+    """Basic methods for all of the file-types"""
+
+    @classmethod
+    def is_file_like(cls, object):
+        """Check to see if an object supports
+        basic file-like operations"""
+        return all((hasattr(object, "read"),
+                    hasattr(object, "write"),
+                    hasattr(object, "tell"),
+                    hasattr(object, "close")))
+
+    def __init__(self, file_name_or_obj):
+        if self.is_file_like(file_name_or_obj):
+            self._file = file_name_or_obj
+        else:
+            if os.path.exists(file_name_or_obj):
+                self._file = open(file_name_or_obj, 'r+b')
+            else:
+                self._file = open(file_name_or_obj, 'w')
+
+class PasswordCryptFile(CryptFile):
+    """Write and INIT operations for 'password' style
+    ciphers"""
+    
+    def __init__(self, file_name_or_obj, passphrase):
+        super(PasswordCryptFile, self).__init__(file_name_or_obj)
+        self._passphrase = hashlib.sha256(passphrase).hexdigest()
+
+    def read(self, size=None):
+        if size is None:
+            ciphertext = self._file.read()
+        else:
+            ciphertext = self._file.read(size)
+        return self._crypt.decrypt(ciphertext)
+
+    def readline(self):
+        buffer = ""
+        _in = self.read(1)
+        while _in and _in != "\n":
+            buffer += _in
+            _in = self.read(1)
+        return buffer
+
+    def write(self, plaintext):
+        return self._file.write(self._crypt.encrypt(plaintext))
+
+    def tell(self, *args, **kwargs):
+        return self._file.tell(*args, **kwargs)
+    
+    def close(self):
+        return self._file.close()
+
+class PKSAEPFile(CryptFile):
+    """Read/write PKS-AEP encrypted files"""
+
+    def __init__(self, file_name_or_obj, keyfile=None):
+        super(PKSAEPFile, self).__init__(file_name_or_obj)
+        if keyfile is not None and self.is_file_like(keyfile):
+            self._keyfile = keyfile
+        elif keyfile is not None:
+            self._keyfile = open(keyfile, 'rb')
+        else: self._keyfile = None
+
+class BlowfishFile(PasswordCryptFile):
+    """Read/write Blowfish encryped files"""
+
+    def __init__(self, *args):
+        super(BlowfishFile, self).__init__(*args)
+        # 8 byte counter
+        self._counter = Counter.new(8*8)
+        self._crypt = Blowfish.new(self._passphrase[:56], 
+                                   blockalgo.MODE_CTR,
+                                   counter=self._counter)
+
+class AESFile(PasswordCryptFile):
+    """Read/write AES encrypted files"""
+
+    def __init__(self, *args):
+        super(AESFile, self).__init__(*args)
+        # 16 byte counter
+        self._counter = Counter.new(16*8)
+        self._crypt = AES.new(self._passphrase[:32],
+                              blockalgo.MODE_CTR,
+                              counter=self._counter)
+
+class DES3File(PasswordCryptFile):
+    """Read/write DES3 encrypted files"""
+
+    def __init__(self, *args):
+        super(DES3File, self).__init__(*args)
+        # * byte counter (8*8 bits)
+        self._counter = Counter.new(8*8)
+        self._crypt = DES3.new(self._passphrase[:16], 
+                               blockalgo.MODE_CTR,
+                               counter=self._counter)
+
+class FileShelf(object):
+    """Simple shelf wrapper for working with a file obj"""
+
+    def __init__(self, file_obj, protocol=-1):
+        self._file = file_obj
+        self._protocol = protocol
+        fcontent = self._file.read()
+        if not fcontent:
+            self._dict = {}
+        else:
+            self._dict = cPickle.loads(fcontent)
+
+    def __setitem__(self, key, value):
+        self._dict[key] = value
+
+    def __getitem__(self, key):
+        return self._dict[key]
+
+    def __delitem__(self, key):
+        del self._dict[key]
+
+    def sync(self):
+        cPickle.dump(self._dict, self._file, protocol=self._protocol)
+
+    def close(self):
+        self.sync()
+        self._file.close()
+
+if __name__ == "__main__":
+    """Main program"""
+    import argparse
