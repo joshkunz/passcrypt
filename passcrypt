@@ -26,24 +26,26 @@ class CryptFile(object):
         return all((hasattr(object, "read"),
                     hasattr(object, "write"),
                     hasattr(object, "tell"),
+                    hasattr(object, "seek"),
                     hasattr(object, "close")))
 
     def __init__(self, file_name_or_obj):
         if self.is_file_like(file_name_or_obj):
             self._file = file_name_or_obj
         else:
-            if os.path.exists(file_name_or_obj):
-                self._file = open(file_name_or_obj, 'r+b')
-            else:
-                self._file = open(file_name_or_obj, 'w')
+            self._file = open(file_name_or_obj)
 
 class PasswordCryptFile(CryptFile):
     """Write and INIT operations for 'password' style
     ciphers"""
-    
+
     def __init__(self, file_name_or_obj, passphrase):
         super(PasswordCryptFile, self).__init__(file_name_or_obj)
         self._passphrase = hashlib.sha256(passphrase).hexdigest()
+        self._crypt = self.new_cipher()
+
+    def new_cipher(self):
+        return self.get_cipher(self._passphrase[:self.get_key_size()])
 
     def read(self, size=None):
         if size is None:
@@ -59,6 +61,26 @@ class PasswordCryptFile(CryptFile):
             buffer += _in
             _in = self.read(1)
         return buffer
+
+    def is_empty(self):
+        """An empty file checker, to avoid needless seeks to the
+        end of the file"""
+        pos = self._file.tell()
+        self.seek(0, 2)
+        r = self._file.tell() == 0
+        self.seek(pos, 0)
+        return r
+
+    def seek(self, to, whence):
+        """Waring this is a very ineffeciant method,
+        ciphers are not made to be able to move backwards through
+        (that would really kind of defeat the purpose) so ever seek
+        requires a read to the seeked-to, position"""
+        self._file.seek(to, whence)
+        pos = self._file.tell()
+        self._file.seek(0, 0)
+        self._crypt = self.new_cipher()
+        self.read(pos)
 
     def write(self, plaintext):
         return self._file.write(self._crypt.encrypt(plaintext))
@@ -83,47 +105,63 @@ class PKSAEPFile(CryptFile):
 class BlowfishFile(PasswordCryptFile):
     """Read/write Blowfish encryped files"""
 
-    def __init__(self, *args):
-        super(BlowfishFile, self).__init__(*args)
+    def get_key_size(self):
+        return 56
+
+    def get_cipher(self, key):
         # 8 byte counter
-        self._counter = Counter.new(8*8)
-        self._crypt = Blowfish.new(self._passphrase[:56], 
-                                   blockalgo.MODE_CTR,
-                                   counter=self._counter)
+        self._counter = Counter.new(64)
+        return Blowfish.new(key, 
+                            Blowfish.MODE_CTR, 
+                            counter=self._counter)
+
 
 class AESFile(PasswordCryptFile):
     """Read/write AES encrypted files"""
 
-    def __init__(self, *args):
-        super(AESFile, self).__init__(*args)
+    def get_key_size(self):
+        return 32
+
+    def get_cipher(self, key):
         # 16 byte counter
         self._counter = Counter.new(16*8)
-        self._crypt = AES.new(self._passphrase[:32],
-                              blockalgo.MODE_CTR,
-                              counter=self._counter)
+        return AES.new(key,
+                       AES.MODE_CTR,
+                       counter=self._counter)
 
 class DES3File(PasswordCryptFile):
     """Read/write DES3 encrypted files"""
 
-    def __init__(self, *args):
-        super(DES3File, self).__init__(*args)
+    def get_key_size(self): return 16
+
+    def get_cipher(self, key):
         # * byte counter (8*8 bits)
         self._counter = Counter.new(8*8)
-        self._crypt = DES3.new(self._passphrase[:16], 
-                               blockalgo.MODE_CTR,
-                               counter=self._counter)
+        return DES3.new(key,
+                        DES3.MODE_CTR,
+                        counter=self._counter)
 
-class FileShelf(object):
+class EncryptedShelf(object):
     """Simple shelf wrapper for working with a file obj"""
 
-    def __init__(self, file_obj, protocol=-1):
-        self._file = file_obj
-        self._protocol = protocol
-        fcontent = self._file.read()
-        if not fcontent:
-            self._dict = {}
+    def get_file(self, mode='r'):
+        return self._writer(open(self._filename, mode), self._passphrase)
+
+    def __init__(self, writer, filename, passphrase, protocol=0):
+        self._writer = writer
+        self._filename = filename
+        self._passphrase = passphrase
+
+        if os.path.exists(filename):
+            file = self.get_file()
+            # unfortunatly, proper unpickling from .load is not
+            # working currently
+            self._dict = cPickle.loads(file.read())
+            file.close()
         else:
-            self._dict = cPickle.loads(fcontent)
+            self._dict = {}
+
+        self._protocol = protocol
 
     def __setitem__(self, key, value):
         self._dict[key] = value
@@ -135,11 +173,13 @@ class FileShelf(object):
         del self._dict[key]
 
     def sync(self):
-        cPickle.dump(self._dict, self._file, protocol=self._protocol)
+        file = self.get_file(mode='w')
+        cPickle.dump(self._dict, file, protocol=self._protocol)
+        file.close()
 
     def close(self):
+        """Alias of sync"""
         self.sync()
-        self._file.close()
 
 if __name__ == "__main__":
     """Main program"""
