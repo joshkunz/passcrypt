@@ -26,10 +26,11 @@ or easy_install
 ```bash
 $ passcrypt --help
 usage: passcrypt [-h] [-o OUTPUT] [-t {blowfish,aes,des3}]
-                 {set,del,list,passwd,create} ...
+                 {get,set,del,list,passwd,create} ...
 
 positional arguments:
-  {set,del,list,passwd,create}
+  {get,set,del,list,passwd,create}
+    get                 get a password
     set                 set a password.
     del                 remove a password.
     list                list passwords
@@ -42,4 +43,4 @@ optional arguments:
                         file name of the password vault
   -t {blowfish,aes,des3}, --type {blowfish,aes,des3}
                         Which encryption method to use
-```                        
+```

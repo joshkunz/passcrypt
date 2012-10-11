@@ -15,6 +15,28 @@ def test_shelf_create(writer, filename, password):
         shelf = pc.EncryptedShelf(writer, filename, password)
         shelf.close()
 
+@pytest.mark.parametrize(("writer", "filename", "password"),
+                          final)
+def test_shelf_get(writer, filename, password):
+    with file_cleanup(test_file):
+        shelf = pc.EncryptedShelf(writer, filename, password)
+        shelf["key"] = "value"
+        assert shelf["key"] == "value"
+        assert shelf.get("key") == "value"
+        assert shelf.get("notkey") is None
+        assert shelf.get("notkey", "notvalue") == "notvalue"
+        shelf.close()
+
+@pytest.mark.parametrize(("writer", "filename", "password"),
+                          final)
+def test_shelf_in(writer, filename, password):
+    with file_cleanup(test_file):
+        shelf = pc.EncryptedShelf(writer, filename, password)
+        shelf["key"] = "value"
+        assert "key" in shelf
+        assert "notkey" not in shelf
+        shelf.close()
+
 @pytest.mark.parametrize(("writer", "filename", "password"), 
                          final) 
 def test_shelf_set(writer, filename, password):

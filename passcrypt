@@ -191,6 +191,12 @@ class EncryptedShelf(object):
 
         self._protocol = protocol
 
+    def __iter__(self):
+        return self.iterkeys()
+
+    def __contains__(self, key):
+        return self._dict.__contains__(key)
+
     def __setitem__(self, key, value):
         self._dict[key] = value
 
@@ -203,6 +209,9 @@ class EncryptedShelf(object):
     def update(self, dict):
         """update with the contents of dictionary 'dict'"""
         self._dict.update(dict)
+
+    def get(self, *args):
+        return self._dict.get(*args)
 
     def keys(self):
         "emulates the dictionary.keys method"
@@ -259,6 +268,13 @@ if __name__ == "__main__":
                 print "{0}: {1}".format(name, pas)
             else:
                 print "{0}".format(name)
+
+    def get_pass(args):
+        vault = get_vault(args.output, args.type, args.password)
+        if args.name in vault:
+            print vault[args.name]
+        else:
+            sys.exit(1)
         
 
     def set_pass(args):
@@ -310,6 +326,7 @@ if __name__ == "__main__":
                         method to use")
     subparsers = parser.add_subparsers()
 
+    get_parser = subparsers.add_parser("get", help="get a password")
     set_parser = subparsers.add_parser("set", help="set a password.")
     del_parser = subparsers.add_parser("del", help="remove a password.")
     list_parser = subparsers.add_parser("list", help="list passwords")
@@ -319,6 +336,9 @@ if __name__ == "__main__":
     list_parser.add_argument("-s", "--show", help="Show password values",
                              action="store_true")
     list_parser.set_defaults(method=list_pass)
+
+    get_parser.add_argument("name", help="name of the password to retrive")
+    get_parser.set_defaults(method=get_pass)
 
     set_parser.add_argument("name", help="password id name")
     set_parser.set_defaults(method=set_pass)
