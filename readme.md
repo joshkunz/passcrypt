@@ -25,7 +25,7 @@ or easy_install
 # Usage
 ```bash
 $ passcrypt --help
-usage: passcrypt [-h] [-o OUTPUT] [-t {blowfish,aes,des3}]
+usage: passcrypt [-h] [-o OUTPUT] [-t {blowfish,aes,des3}] [-s]
                  {get,set,del,list,passwd,create} ...
 
 positional arguments:
@@ -43,4 +43,8 @@ optional arguments:
                         file name of the password vault
   -t {blowfish,aes,des3}, --type {blowfish,aes,des3}
                         Which encryption method to use
+  -s, --silent          Don't prompt for password, only works for: get, set,
+                        del and list commands. *Warning* the 'silent' version
+                        will echo the password. This option is for use with
+                        scripts.
 ```
