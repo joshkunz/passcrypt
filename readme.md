@@ -1,3 +1,8 @@
+**WARNING** This project is insecure, and needs security improvments before it's
+ready for prime-time.
+
+**UNMAINTAINED**
+
 passcrypt
 ==========
 
